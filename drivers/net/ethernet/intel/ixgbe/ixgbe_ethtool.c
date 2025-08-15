@@ -16,6 +16,7 @@
 
 #include "ixgbe.h"
 #include "ixgbe_phy.h"
+#include "../intel_ethtool.h"
 
 
 enum {NETDEV_STATS, IXGBE_STATS};
@@ -144,167 +145,54 @@ static const char ixgbe_priv_flags_strings[][ETH_GSTRING_LEN] = {
 
 #define ixgbe_isbackplane(type) ((type) == ixgbe_media_type_backplane)
 
-static void ixgbe_set_supported_10gtypes(struct ixgbe_hw *hw,
+static void ixgbe_get_10g_link_ksettings(struct ixgbe_hw *hw,
 					 struct ethtool_link_ksettings *cmd)
 {
-	if (!ixgbe_isbackplane(hw->phy.media_type)) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10000baseT_Full);
-		return;
-	}
-
-	switch (hw->device_id) {
-	case IXGBE_DEV_ID_82598:
-	case IXGBE_DEV_ID_82599_KX4:
-	case IXGBE_DEV_ID_82599_KX4_MEZZ:
-	case IXGBE_DEV_ID_X550EM_X_KX4:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, supported, 10000baseKX4_Full);
-		break;
-	case IXGBE_DEV_ID_82598_BX:
-	case IXGBE_DEV_ID_82599_KR:
-	case IXGBE_DEV_ID_X550EM_X_KR:
-	case IXGBE_DEV_ID_X550EM_X_XFI:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, supported, 10000baseKR_Full);
-		break;
-	default:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, supported, 10000baseKX4_Full);
-		ethtool_link_ksettings_add_link_mode
-			(cmd, supported, 10000baseKR_Full);
-		break;
-	}
-}
-
-static void ixgbe_set_advertising_10gtypes(struct ixgbe_hw *hw,
-					   struct ethtool_link_ksettings *cmd)
-{
-	if (!ixgbe_isbackplane(hw->phy.media_type)) {
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     10000baseT_Full);
-		return;
-	}
-
-	switch (hw->device_id) {
-	case IXGBE_DEV_ID_82598:
-	case IXGBE_DEV_ID_82599_KX4:
-	case IXGBE_DEV_ID_82599_KX4_MEZZ:
-	case IXGBE_DEV_ID_X550EM_X_KX4:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, advertising, 10000baseKX4_Full);
-		break;
-	case IXGBE_DEV_ID_82598_BX:
-	case IXGBE_DEV_ID_82599_KR:
-	case IXGBE_DEV_ID_X550EM_X_KR:
-	case IXGBE_DEV_ID_X550EM_X_XFI:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, advertising, 10000baseKR_Full);
-		break;
-	default:
-		ethtool_link_ksettings_add_link_mode
-			(cmd, advertising, 10000baseKX4_Full);
-		ethtool_link_ksettings_add_link_mode
-			(cmd, advertising, 10000baseKR_Full);
-		break;
-	}
-}
-
-static int ixgbe_get_link_ksettings(struct net_device *netdev,
-				    struct ethtool_link_ksettings *cmd)
-{
-	struct ixgbe_adapter *adapter = ixgbe_from_netdev(netdev);
-	struct ixgbe_hw *hw = &adapter->hw;
-	ixgbe_link_speed supported_link;
-	bool autoneg = false;
-
-	ethtool_link_ksettings_zero_link_mode(cmd, supported);
-	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
-
-	hw->mac.ops.get_link_capabilities(hw, &supported_link, &autoneg);
-
-	/* set the supported link speeds */
-	if (supported_link & IXGBE_LINK_SPEED_10GB_FULL) {
-		ixgbe_set_supported_10gtypes(hw, cmd);
-		ixgbe_set_advertising_10gtypes(hw, cmd);
-	}
-	if (supported_link & IXGBE_LINK_SPEED_5GB_FULL)
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     5000baseT_Full);
-
-	if (supported_link & IXGBE_LINK_SPEED_2_5GB_FULL)
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     2500baseT_Full);
-
-	if (supported_link & IXGBE_LINK_SPEED_1GB_FULL) {
-		if (ixgbe_isbackplane(hw->phy.media_type)) {
+	if (ixgbe_isbackplane(hw->phy.media_type)) {
+		switch (hw->device_id) {
+		case IXGBE_DEV_ID_82598:
+		case IXGBE_DEV_ID_82599_KX4:
+		case IXGBE_DEV_ID_82599_KX4_MEZZ:
+		case IXGBE_DEV_ID_X550EM_X_KX4:
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseKX_Full);
+							     10000baseKX4_Full);
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     1000baseKX_Full);
-		} else {
+							     10000baseKX4_Full);
+			break;
+		case IXGBE_DEV_ID_82598_BX:
+		case IXGBE_DEV_ID_82599_KR:
+		case IXGBE_DEV_ID_X550EM_X_KR:
+		case IXGBE_DEV_ID_X550EM_X_XFI:
 			ethtool_link_ksettings_add_link_mode(cmd, supported,
-							     1000baseT_Full);
+							     10000baseKR_Full);
 			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     1000baseT_Full);
+							     10000baseKR_Full);
+			break;
+		default:
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     10000baseKX4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     10000baseKR_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     10000baseKX4_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     10000baseKR_Full);
+			break;
 		}
-	}
-	if (supported_link & IXGBE_LINK_SPEED_100_FULL) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     100baseT_Full);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     100baseT_Full);
-	}
-	if (supported_link & IXGBE_LINK_SPEED_10_FULL) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported,
-						     10baseT_Full);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising,
-						     10baseT_Full);
-	}
-
-	/* set the advertised speeds */
-	if (hw->phy.autoneg_advertised) {
-		ethtool_link_ksettings_zero_link_mode(cmd, advertising);
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_10_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     10baseT_Full);
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_100_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     100baseT_Full);
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_10GB_FULL)
-			ixgbe_set_advertising_10gtypes(hw, cmd);
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_1GB_FULL) {
-			if (ethtool_link_ksettings_test_link_mode
-				(cmd, supported, 1000baseKX_Full))
-				ethtool_link_ksettings_add_link_mode
-					(cmd, advertising, 1000baseKX_Full);
-			else
-				ethtool_link_ksettings_add_link_mode
-					(cmd, advertising, 1000baseT_Full);
-		}
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_5GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     5000baseT_Full);
-		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_2_5GB_FULL)
-			ethtool_link_ksettings_add_link_mode(cmd, advertising,
-							     2500baseT_Full);
 	} else {
-		if (hw->phy.multispeed_fiber && !autoneg) {
-			if (supported_link & IXGBE_LINK_SPEED_10GB_FULL)
-				ethtool_link_ksettings_add_link_mode
-					(cmd, advertising, 10000baseT_Full);
-		}
+		ethtool_link_ksettings_add_link_mode(cmd, supported,
+						     10000baseT_Full);
+		ethtool_link_ksettings_add_link_mode(cmd, advertising,
+						     10000baseT_Full);
 	}
+}
 
-	if (autoneg) {
-		ethtool_link_ksettings_add_link_mode(cmd, supported, Autoneg);
-		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
-		cmd->base.autoneg = AUTONEG_ENABLE;
-	} else
-		cmd->base.autoneg = AUTONEG_DISABLE;
+static void ixgbe_get_port_ksettings(struct ixgbe_adapter *adapter,
+				     struct ethtool_link_ksettings *cmd)
+{
+	struct ixgbe_hw *hw = &adapter->hw;
 
-	/* Determine the remaining settings based on the PHY type. */
-	switch (adapter->hw.phy.type) {
+	switch (hw->phy.type) {
 	case ixgbe_phy_tn:
 	case ixgbe_phy_aq:
 	case ixgbe_phy_x550em_ext_t:
@@ -400,6 +288,101 @@ static int ixgbe_get_link_ksettings(struct net_device *netdev,
 		cmd->base.port = PORT_OTHER;
 		break;
 	}
+}
+
+static int ixgbe_get_link_ksettings(struct net_device *netdev,
+				    struct ethtool_link_ksettings *cmd)
+{
+	struct ixgbe_adapter *adapter = ixgbe_from_netdev(netdev);
+	struct ixgbe_hw *hw = &adapter->hw;
+	ixgbe_link_speed supported_link;
+	bool autoneg = false;
+
+	ethtool_link_ksettings_zero_link_mode(cmd, supported);
+	ethtool_link_ksettings_zero_link_mode(cmd, advertising);
+
+	hw->mac.ops.get_link_capabilities(hw, &supported_link, &autoneg);
+
+	/* set the supported link speeds */
+	if (supported_link & IXGBE_LINK_SPEED_10GB_FULL)
+		ixgbe_get_10g_link_ksettings(hw, cmd);
+
+	if (supported_link & IXGBE_LINK_SPEED_5GB_FULL)
+		ethtool_link_ksettings_add_link_mode(cmd, supported,
+						     5000baseT_Full);
+
+	if (supported_link & IXGBE_LINK_SPEED_2_5GB_FULL)
+		ethtool_link_ksettings_add_link_mode(cmd, supported,
+						     2500baseT_Full);
+
+	if (supported_link & IXGBE_LINK_SPEED_1GB_FULL) {
+		if (ixgbe_isbackplane(hw->phy.media_type)) {
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     1000baseKX_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     1000baseKX_Full);
+		} else {
+			ethtool_link_ksettings_add_link_mode(cmd, supported,
+							     1000baseT_Full);
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     1000baseT_Full);
+		}
+	}
+	if (supported_link & IXGBE_LINK_SPEED_100_FULL) {
+		ethtool_link_ksettings_add_link_mode(cmd, supported,
+						     100baseT_Full);
+		ethtool_link_ksettings_add_link_mode(cmd, advertising,
+						     100baseT_Full);
+	}
+	if (supported_link & IXGBE_LINK_SPEED_10_FULL) {
+		ethtool_link_ksettings_add_link_mode(cmd, supported,
+						     10baseT_Full);
+		ethtool_link_ksettings_add_link_mode(cmd, advertising,
+						     10baseT_Full);
+	}
+
+	/* set the advertised speeds */
+	if (hw->phy.autoneg_advertised) {
+		ethtool_link_ksettings_zero_link_mode(cmd, advertising);
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_10_FULL)
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     10baseT_Full);
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_100_FULL)
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     100baseT_Full);
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_10GB_FULL)
+			ixgbe_get_10g_link_ksettings(hw, cmd);
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_1GB_FULL) {
+			if (ethtool_link_ksettings_test_link_mode
+				(cmd, supported, 1000baseKX_Full))
+				ethtool_link_ksettings_add_link_mode
+					(cmd, advertising, 1000baseKX_Full);
+			else
+				ethtool_link_ksettings_add_link_mode
+					(cmd, advertising, 1000baseT_Full);
+		}
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_5GB_FULL)
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     5000baseT_Full);
+		if (hw->phy.autoneg_advertised & IXGBE_LINK_SPEED_2_5GB_FULL)
+			ethtool_link_ksettings_add_link_mode(cmd, advertising,
+							     2500baseT_Full);
+	} else {
+		if (hw->phy.multispeed_fiber && !autoneg) {
+			if (supported_link & IXGBE_LINK_SPEED_10GB_FULL)
+				ethtool_link_ksettings_add_link_mode
+					(cmd, advertising, 10000baseT_Full);
+		}
+	}
+
+	if (autoneg) {
+		ethtool_link_ksettings_add_link_mode(cmd, supported, Autoneg);
+		ethtool_link_ksettings_add_link_mode(cmd, advertising, Autoneg);
+		cmd->base.autoneg = AUTONEG_ENABLE;
+	} else
+		cmd->base.autoneg = AUTONEG_DISABLE;
+
+	ixgbe_get_port_ksettings(adapter, cmd);
 
 	/* Indicate pause support */
 	ethtool_link_ksettings_add_link_mode(cmd, supported, Pause);
@@ -645,17 +628,8 @@ static int ixgbe_set_pauseparam_e610(struct net_device *netdev,
 	return 0;
 }
 
-static u32 ixgbe_get_msglevel(struct net_device *netdev)
-{
-	struct ixgbe_adapter *adapter = ixgbe_from_netdev(netdev);
-	return adapter->msg_enable;
-}
-
-static void ixgbe_set_msglevel(struct net_device *netdev, u32 data)
-{
-	struct ixgbe_adapter *adapter = ixgbe_from_netdev(netdev);
-	adapter->msg_enable = data;
-}
+DEFINE_INTEL_GET_MSGLEVEL(ixgbe_get_msglevel, struct ixgbe_adapter);
+DEFINE_INTEL_SET_MSGLEVEL(ixgbe_set_msglevel, struct ixgbe_adapter);
 
 static int ixgbe_get_regs_len(struct net_device *netdev)
 {
@@ -1223,13 +1197,11 @@ static void ixgbe_get_ringparam(struct net_device *netdev,
 				struct netlink_ext_ack *extack)
 {
 	struct ixgbe_adapter *adapter = ixgbe_from_netdev(netdev);
-	struct ixgbe_ring *tx_ring = adapter->tx_ring[0];
-	struct ixgbe_ring *rx_ring = adapter->rx_ring[0];
 
 	ring->rx_max_pending = ixgbe_get_max_rxd(adapter);
 	ring->tx_max_pending = ixgbe_get_max_txd(adapter);
-	ring->rx_pending = rx_ring->count;
-	ring->tx_pending = tx_ring->count;
+	ring->rx_pending = adapter->rx_ring[0]->count;
+	ring->tx_pending = adapter->tx_ring[0]->count;
 }
 
 static int ixgbe_set_ringparam(struct net_device *netdev,
@@ -2348,22 +2320,6 @@ skip_loopback:
 	}
 }
 
-static int ixgbe_wol_exclusion(struct ixgbe_adapter *adapter,
-			       struct ethtool_wolinfo *wol)
-{
-	struct ixgbe_hw *hw = &adapter->hw;
-	int retval = 0;
-
-	/* WOL not supported for all devices */
-	if (!ixgbe_wol_supported(adapter, hw->device_id,
-				 hw->subsystem_device_id)) {
-		retval = 1;
-		wol->supported = 0;
-	}
-
-	return retval;
-}
-
 static void ixgbe_get_wol(struct net_device *netdev,
 			  struct ethtool_wolinfo *wol)
 {
@@ -2373,9 +2329,12 @@ static void ixgbe_get_wol(struct net_device *netdev,
 			 WAKE_BCAST | WAKE_MAGIC;
 	wol->wolopts = 0;
 
-	if (ixgbe_wol_exclusion(adapter, wol) ||
-	    !device_can_wakeup(&adapter->pdev->dev))
+	if (!ixgbe_wol_supported(adapter, adapter->hw.device_id,
+				 adapter->hw.subsystem_device_id) ||
+	    !device_can_wakeup(&adapter->pdev->dev)) {
+		wol->supported = 0;
 		return;
+	}
 
 	if (adapter->wol & IXGBE_WUFC_EX)
 		wol->wolopts |= WAKE_UCAST;
@@ -2395,7 +2354,8 @@ static int ixgbe_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 			    WAKE_FILTER))
 		return -EOPNOTSUPP;
 
-	if (ixgbe_wol_exclusion(adapter, wol))
+	if (!ixgbe_wol_supported(adapter, adapter->hw.device_id,
+				 adapter->hw.subsystem_device_id))
 		return wol->wolopts ? -EOPNOTSUPP : 0;
 
 	adapter->wol = 0;
