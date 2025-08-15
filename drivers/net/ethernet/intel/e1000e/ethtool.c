@@ -13,6 +13,7 @@
 #include <linux/pm_runtime.h>
 
 #include "e1000.h"
+#include "../intel_ethtool.h"
 
 enum { NETDEV_STATS, E1000_STATS };
 
@@ -345,24 +346,9 @@ out:
 	return ret_val;
 }
 
-static void e1000_get_pauseparam(struct net_device *netdev,
-				 struct ethtool_pauseparam *pause)
-{
-	struct e1000_adapter *adapter = netdev_priv(netdev);
-	struct e1000_hw *hw = &adapter->hw;
-
-	pause->autoneg =
-	    (adapter->fc_autoneg ? AUTONEG_ENABLE : AUTONEG_DISABLE);
-
-	if (hw->fc.current_mode == e1000_fc_rx_pause) {
-		pause->rx_pause = 1;
-	} else if (hw->fc.current_mode == e1000_fc_tx_pause) {
-		pause->tx_pause = 1;
-	} else if (hw->fc.current_mode == e1000_fc_full) {
-		pause->rx_pause = 1;
-		pause->tx_pause = 1;
-	}
-}
+DEFINE_INTEL_GET_PAUSEPARAM(e1000_get_pauseparam, struct e1000_adapter,
+			    struct e1000_hw, e1000_fc_rx_pause,
+			    e1000_fc_tx_pause, e1000_fc_full);
 
 static int e1000_set_pauseparam(struct net_device *netdev,
 				struct ethtool_pauseparam *pause)
@@ -412,17 +398,8 @@ out:
 	return retval;
 }
 
-static u32 e1000_get_msglevel(struct net_device *netdev)
-{
-	struct e1000_adapter *adapter = netdev_priv(netdev);
-	return adapter->msg_enable;
-}
-
-static void e1000_set_msglevel(struct net_device *netdev, u32 data)
-{
-	struct e1000_adapter *adapter = netdev_priv(netdev);
-	adapter->msg_enable = data;
-}
+DEFINE_INTEL_GET_MSGLEVEL(e1000_get_msglevel, struct e1000_adapter);
+DEFINE_INTEL_SET_MSGLEVEL(e1000_set_msglevel, struct e1000_adapter);
 
 static int e1000_get_regs_len(struct net_device __always_unused *netdev)
 {
@@ -641,18 +618,8 @@ static void e1000_get_drvinfo(struct net_device *netdev,
 		sizeof(drvinfo->bus_info));
 }
 
-static void e1000_get_ringparam(struct net_device *netdev,
-				struct ethtool_ringparam *ring,
-				struct kernel_ethtool_ringparam *kernel_ring,
-				struct netlink_ext_ack *extack)
-{
-	struct e1000_adapter *adapter = netdev_priv(netdev);
-
-	ring->rx_max_pending = E1000_MAX_RXD;
-	ring->tx_max_pending = E1000_MAX_TXD;
-	ring->rx_pending = adapter->rx_ring_count;
-	ring->tx_pending = adapter->tx_ring_count;
-}
+DEFINE_INTEL_GET_RINGPARAM(e1000_get_ringparam, struct e1000_adapter,
+			   E1000_MAX_RXD, E1000_MAX_TXD);
 
 static int e1000_set_ringparam(struct net_device *netdev,
 			       struct ethtool_ringparam *ring,
@@ -1894,13 +1861,8 @@ static void e1000_get_wol(struct net_device *netdev,
 	wol->supported = WAKE_UCAST | WAKE_MCAST |
 	    WAKE_BCAST | WAKE_MAGIC | WAKE_PHY;
 
-	/* apply any specific unsupported masks here */
-	if (adapter->flags & FLAG_NO_WAKE_UCAST) {
+	if (adapter->flags & FLAG_NO_WAKE_UCAST)
 		wol->supported &= ~WAKE_UCAST;
-
-		if (adapter->wol & E1000_WUFC_EX)
-			e_err("Interface does not support directed (unicast) frame wake-up packets\n");
-	}
 
 	if (adapter->wol & E1000_WUFC_EX)
 		wol->wolopts |= WAKE_UCAST;
@@ -1924,7 +1886,6 @@ static int e1000_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 			      WAKE_MAGIC | WAKE_PHY)))
 		return -EOPNOTSUPP;
 
-	/* these settings will always override what we currently have */
 	adapter->wol = 0;
 
 	if (wol->wolopts & WAKE_UCAST)
