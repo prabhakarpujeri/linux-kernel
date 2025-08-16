@@ -7,6 +7,7 @@
 
 #include <generated/utsrelease.h>
 #include <linux/crash_dump.h>
+#include <linux/irq.h>
 #include "ice.h"
 #include "ice_base.h"
 #include "ice_lib.h"
@@ -2561,8 +2562,14 @@ static int ice_vsi_req_irq_msix(struct ice_vsi *vsi, char *basename)
 	int tx_int_idx = 0;
 	int vector, err;
 	int irq_num;
+	int cpu_idx = -1;
+	int numa_node;
+	const struct cpumask *node_mask;
 
 	dev = ice_pf_to_dev(pf);
+	numa_node = dev_to_node(dev);
+	node_mask = cpumask_of_node(numa_node);
+
 	for (vector = 0; vector < q_vectors; vector++) {
 		struct ice_q_vector *q_vector = vsi->q_vectors[vector];
 
@@ -2594,6 +2601,15 @@ static int ice_vsi_req_irq_msix(struct ice_vsi *vsi, char *basename)
 				   err);
 			goto free_q_irqs;
 		}
+
+		/* spread vectors across CPUs for better performance */
+		cpu_idx = cpumask_next(cpu_idx, node_mask);
+		if (cpu_idx >= nr_cpu_ids)
+			cpu_idx = cpumask_first(node_mask);
+
+		cpumask_clear(q_vector->affinity_mask);
+		cpumask_set_cpu(cpu_idx, q_vector->affinity_mask);
+		irq_set_affinity_hint(irq_num, q_vector->affinity_mask);
 	}
 
 	err = ice_set_cpu_rx_rmap(vsi);
@@ -6669,20 +6685,30 @@ struct ice_dim {
  */
 static const struct ice_dim rx_profile[] = {
 	{2},    /* 500,000 ints/s, capped at 250K by INTRL */
+	{4},    /* 250,000 ints/s */
 	{8},    /* 125,000 ints/s */
 	{16},   /*  62,500 ints/s */
+	{32},	/*  31,250 ints/s */
 	{62},   /*  16,129 ints/s */
+	{96},	/*  10,416 ints/s */
 	{126}   /*   7,936 ints/s */
 };
+
+#define ICE_SMALL_PACKET_THRESHOLD 256
+#define ICE_LARGE_PACKET_THRESHOLD 1024
 
 /* The transmit profile, which has the same sorts of values
  * as the previous struct
  */
 static const struct ice_dim tx_profile[] = {
 	{2},    /* 500,000 ints/s, capped at 250K by INTRL */
+	{4},    /* 250,000 ints/s */
 	{8},    /* 125,000 ints/s */
-	{40},   /*  16,125 ints/s */
+	{24},   /*  41,666 ints/s */
+	{40},   /*  25,000 ints/s */
+	{64},	/*  15,625 ints/s */
 	{128},  /*   7,812 ints/s */
+	{192},  /*   5,208 ints/s */
 	{256}   /*   3,906 ints/s */
 };
 
@@ -6691,9 +6717,28 @@ static void ice_tx_dim_work(struct work_struct *work)
 	struct ice_ring_container *rc;
 	struct dim *dim;
 	u16 itr;
+	u64 packets;
+	u64 bytes;
+	u32 avg_pkt_size = 0;
 
 	dim = container_of(work, struct dim, work);
 	rc = dim->priv;
+
+	packets = dim->stats.packets;
+	bytes = dim->stats.bytes;
+
+	if (packets)
+		avg_pkt_size = bytes / packets;
+
+	if (avg_pkt_size > 0) {
+		if (avg_pkt_size < ICE_SMALL_PACKET_THRESHOLD) {
+			if (dim->profile_ix > 0)
+				dim->profile_ix--;
+		} else if (avg_pkt_size > ICE_LARGE_PACKET_THRESHOLD) {
+			if (dim->profile_ix < (ARRAY_SIZE(tx_profile) - 1))
+				dim->profile_ix++;
+		}
+	}
 
 	WARN_ON(dim->profile_ix >= ARRAY_SIZE(tx_profile));
 
@@ -6711,9 +6756,28 @@ static void ice_rx_dim_work(struct work_struct *work)
 	struct ice_ring_container *rc;
 	struct dim *dim;
 	u16 itr;
+	u64 packets;
+	u64 bytes;
+	u32 avg_pkt_size = 0;
 
 	dim = container_of(work, struct dim, work);
 	rc = dim->priv;
+
+	packets = dim->stats.packets;
+	bytes = dim->stats.bytes;
+
+	if (packets)
+		avg_pkt_size = bytes / packets;
+
+	if (avg_pkt_size > 0) {
+		if (avg_pkt_size < ICE_SMALL_PACKET_THRESHOLD) {
+			if (dim->profile_ix > 0)
+				dim->profile_ix--;
+		} else if (avg_pkt_size > ICE_LARGE_PACKET_THRESHOLD) {
+			if (dim->profile_ix < (ARRAY_SIZE(rx_profile) - 1))
+				dim->profile_ix++;
+		}
+	}
 
 	WARN_ON(dim->profile_ix >= ARRAY_SIZE(rx_profile));
 
