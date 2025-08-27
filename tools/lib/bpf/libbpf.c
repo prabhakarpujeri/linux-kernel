@@ -226,6 +226,7 @@ static const char * const prog_type_name[] = {
 	[BPF_PROG_TYPE_LSM]			= "lsm",
 	[BPF_PROG_TYPE_SK_LOOKUP]		= "sk_lookup",
 	[BPF_PROG_TYPE_SYSCALL]			= "syscall",
+	[BPF_PROG_TYPE_STORAGE_FILTER]		= "storage_filter",
 	[BPF_PROG_TYPE_NETFILTER]		= "netfilter",
 };
 

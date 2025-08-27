@@ -2224,12 +2224,28 @@ err_put:
 	return err;
 }
 
+static const struct bpf_func_proto *
+bpf_storage_filter_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	switch (func_id) {
+	case BPF_FUNC_bio_get_data:
+		return &bpf_bio_get_data_proto;
+	default:
+		return bpf_base_func_proto(func_id, prog);
+	}
+}
+
+const struct bpf_prog_ops bpf_storage_filter_prog_ops = {
+	.get_func_proto = bpf_storage_filter_func_proto,
+};
+
 static const struct bpf_prog_ops * const bpf_prog_types[] = {
 #define BPF_PROG_TYPE(_id, _name, prog_ctx_type, kern_ctx_type) \
 	[_id] = & _name ## _prog_ops,
 #define BPF_MAP_TYPE(_id, _ops)
 #define BPF_LINK_TYPE(_id, _name)
 #include <linux/bpf_types.h>
+	[BPF_PROG_TYPE_STORAGE_FILTER] = &bpf_storage_filter_prog_ops,
 #undef BPF_PROG_TYPE
 #undef BPF_MAP_TYPE
 #undef BPF_LINK_TYPE

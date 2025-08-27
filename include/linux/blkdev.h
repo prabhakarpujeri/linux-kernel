@@ -146,6 +146,7 @@ struct gendisk {
 	 * block core will take care of allocating them automatically.
 	 */
 	int major;
+	struct bpf_prog __rcu *bpf_storage_filter;
 	int first_minor;
 	int minors;
 

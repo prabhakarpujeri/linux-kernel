@@ -2,6 +2,7 @@
 /* Copyright (c) 2011-2014 PLUMgrid, http://plumgrid.com
  */
 #include <linux/bpf.h>
+#include <linux/bio.h>
 #include <linux/btf.h>
 #include <linux/bpf-cgroup.h>
 #include <linux/cgroup.h>
@@ -444,6 +445,50 @@ const struct bpf_func_proto bpf_get_current_ancestor_cgroup_id_proto = {
 	.arg1_type	= ARG_ANYTHING,
 };
 #endif /* CONFIG_CGROUPS */
+
+BPF_CALL_4(bpf_bio_get_data, struct bpf_storage_ctx *, ctx, void *, dst, u32, size, u32, offset)
+{
+	struct bio *bio = ctx->bio;
+	struct bio_vec bv;
+	struct bvec_iter iter;
+	int bytes_copied = 0;
+
+	if (offset + size > bio->bi_iter.bi_size)
+		return -EINVAL;
+
+	bio_for_each_segment(bv, bio, iter) {
+		int bytes_to_copy;
+		void *src;
+
+		if (iter.bi_size <= offset) {
+			offset -= iter.bi_size;
+			continue;
+		}
+
+		src = bvec_kmap_local(&bv);
+		bytes_to_copy = min_t(int, bv.bv_len - offset, size - bytes_copied);
+		memcpy(dst + bytes_copied, src + offset, bytes_to_copy);
+		kunmap_local(src);
+
+		bytes_copied += bytes_to_copy;
+		if (bytes_copied == size)
+			break;
+
+		offset = 0;
+	}
+
+	return bytes_copied;
+}
+
+const struct bpf_func_proto bpf_bio_get_data_proto = {
+	.func		= bpf_bio_get_data,
+	.gpl_only	= false,
+	.ret_type	= RET_INTEGER,
+	.arg1_type	= ARG_PTR_TO_CTX,
+	.arg2_type	= ARG_PTR_TO_MEM,
+	.arg3_type	= ARG_CONST_SIZE,
+	.arg4_type	= ARG_ANYTHING,
+};
 
 #define BPF_STRTOX_BASE_MASK 0x1F
 

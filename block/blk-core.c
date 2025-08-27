@@ -492,6 +492,33 @@ bool blk_get_queue(struct request_queue *q)
 }
 EXPORT_SYMBOL(blk_get_queue);
 
+#ifdef CONFIG_BPF_SYSCALL
+static int bpf_storage_filter(struct bio *bio)
+{
+	struct bpf_prog *prog;
+	struct bpf_storage_ctx ctx;
+	u32 ret;
+
+	rcu_read_lock();
+	prog = rcu_dereference(bio->bi_bdev->bd_disk->bpf_storage_filter);
+	if (!prog) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	ctx.bio = bio;
+	ret = BPF_PROG_RUN(prog, &ctx);
+	rcu_read_unlock();
+
+	if (ret) {
+		bio_io_error(bio);
+		return 1;
+	}
+
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_FAIL_MAKE_REQUEST
 
 static DECLARE_FAULT_ATTR(fail_make_request);
@@ -789,6 +816,10 @@ void submit_bio_noacct(struct bio *bio)
 	if ((bio->bi_opf & REQ_NOWAIT) && !bdev_nowait(bdev))
 		goto not_supported;
 
+#ifdef CONFIG_BPF_SYSCALL
+	if (bpf_storage_filter(bio))
+		return;
+#endif
 	if (should_fail_bio(bio))
 		goto end_io;
 	bio_check_ro(bio);
