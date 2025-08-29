@@ -79,6 +79,8 @@ BPF_PROG_TYPE(BPF_PROG_TYPE_LSM, lsm,
 #endif
 BPF_PROG_TYPE(BPF_PROG_TYPE_STORAGE_FILTER, storage_filter,
 	      struct bpf_storage_ctx, struct bio)
+BPF_PROG_TYPE(BPF_PROG_TYPE_STORAGE_DEV, bpf_storage_dev,
+	      struct bpf_storage_dev_ctx, struct request)
 BPF_PROG_TYPE(BPF_PROG_TYPE_SYSCALL, bpf_syscall,
 	      void *, void *)
 #ifdef CONFIG_NETFILTER_BPF_LINK

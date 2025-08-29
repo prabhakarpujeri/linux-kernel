@@ -12,6 +12,7 @@
 #include <linux/btf.h>
 #include <linux/bpf_verifier.h>
 #include <linux/filter.h>
+#include <linux/btf.h>
 #include <net/netlink.h>
 #include <linux/file.h>
 #include <linux/vmalloc.h>
@@ -59,6 +60,34 @@ static bool bpf_storage_filter_is_valid_access(int off, int size, enum bpf_acces
 
 const struct bpf_verifier_ops bpf_storage_filter_verifier_ops = {
 	.is_valid_access = bpf_storage_filter_is_valid_access,
+};
+
+static bool bpf_storage_dev_is_valid_access(int off, int size, enum bpf_access_type type,
+					    const struct bpf_prog *prog,
+					    struct bpf_insn_access_aux *info)
+{
+	if (off < 0 || off + size > sizeof(struct bpf_storage_dev_ctx))
+		return false;
+
+	if (type != BPF_READ)
+		return false;
+
+	if (off == offsetof(struct bpf_storage_dev_ctx, req)) {
+		if (size != sizeof(__u64))
+			return false;
+
+		info->reg_type = PTR_TO_BTF_ID | PTR_MAYBE_NULL;
+		info->btf = btf_vmlinux;
+		info->btf_id = btf_tracing_ids[BTF_TRACING_TYPE_REQUEST];
+	} else {
+		return false;
+	}
+
+	return true;
+}
+
+const struct bpf_verifier_ops bpf_storage_dev_verifier_ops = {
+	.is_valid_access = bpf_storage_dev_is_valid_access,
 };
 
 static const struct bpf_verifier_ops * const bpf_verifier_ops[] = {

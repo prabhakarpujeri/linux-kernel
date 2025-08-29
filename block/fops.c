@@ -17,6 +17,8 @@
 #include <linux/fs.h>
 #include <linux/iomap.h>
 #include <linux/module.h>
+#include <uapi/linux/bpf.h>
+#include <linux/bpf.h>
 #include <linux/io_uring/cmd.h>
 #include "blk.h"
 
@@ -943,6 +945,40 @@ static int blkdev_mmap_prepare(struct vm_area_desc *desc)
 	return generic_file_mmap_prepare(desc);
 }
 
+#ifdef CONFIG_BPF_SYSCALL
+static int blkdev_bpf(struct file *file, const union bpf_attr *attr)
+{
+	struct inode *inode = file_inode(file);
+	struct block_device *bdev = I_BDEV(inode);
+	struct request_queue *q = bdev_get_queue(bdev);
+	struct bpf_prog *prog, *old_prog;
+
+	if (!q)
+		return -ENXIO;
+
+	if (attr->attach_flags != 0)
+		return -EINVAL;
+
+	if (attr->attach_type != BPF_ATTACH_TYPE_STORAGE_DEV)
+		return -EINVAL;
+
+	if (attr->attach_bpf_fd == 0) {
+		prog = NULL;
+	} else {
+		prog = bpf_prog_get_type(attr->attach_bpf_fd,
+					 BPF_PROG_TYPE_STORAGE_DEV);
+		if (IS_ERR(prog))
+			return PTR_ERR(prog);
+	}
+
+	old_prog = xchg(&q->bpf_storage_dev_program, prog);
+	if (old_prog)
+		bpf_prog_put(old_prog);
+
+	return 0;
+}
+#endif
+
 const struct file_operations def_blk_fops = {
 	.open		= blkdev_open,
 	.release	= blkdev_release,
@@ -955,6 +991,9 @@ const struct file_operations def_blk_fops = {
 	.unlocked_ioctl	= blkdev_ioctl,
 #ifdef CONFIG_COMPAT
 	.compat_ioctl	= compat_blkdev_ioctl,
+#endif
+#ifdef CONFIG_BPF_SYSCALL
+	.bpf		= blkdev_bpf,
 #endif
 	.splice_read	= filemap_splice_read,
 	.splice_write	= iter_file_splice_write,

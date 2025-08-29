@@ -33,6 +33,7 @@
 #include <trace/events/block.h>
 
 #include <linux/t10-pi.h>
+#include <linux/bpf.h>
 #include "blk.h"
 #include "blk-mq.h"
 #include "blk-mq-debugfs.h"
@@ -3193,6 +3194,21 @@ new_request:
 	rq_qos_track(q, rq, bio);
 
 	blk_mq_bio_to_request(rq, bio, nr_segs);
+
+#ifdef CONFIG_BPF_SYSCALL
+	if (unlikely(q->bpf_storage_dev_program)) {
+		struct bpf_storage_dev_ctx ctx = { .rq = rq };
+		unsigned int ret;
+
+		ret = BPF_PROG_RUN(q->bpf_storage_dev_program, &ctx);
+		if (ret) {
+			bio->bi_status = BLK_STS_IOERR;
+			bio_endio(bio);
+			blk_mq_free_request(rq);
+			return;
+		}
+	}
+#endif
 
 	ret = blk_crypto_rq_get_keyslot(rq);
 	if (ret != BLK_STS_OK) {

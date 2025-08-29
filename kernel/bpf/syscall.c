@@ -2224,19 +2224,7 @@ err_put:
 	return err;
 }
 
-static const struct bpf_func_proto *
-bpf_storage_filter_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
-{
-	switch (func_id) {
-	case BPF_FUNC_bio_get_data:
-		return &bpf_bio_get_data_proto;
-	default:
-		return bpf_base_func_proto(func_id, prog);
-	}
-}
-
-const struct bpf_prog_ops bpf_storage_filter_prog_ops = {
-	.get_func_proto = bpf_storage_filter_func_proto,
+const struct bpf_prog_ops bpf_storage_dev_prog_ops = {
 };
 
 static const struct bpf_prog_ops * const bpf_prog_types[] = {
@@ -2245,7 +2233,7 @@ static const struct bpf_prog_ops * const bpf_prog_types[] = {
 #define BPF_MAP_TYPE(_id, _ops)
 #define BPF_LINK_TYPE(_id, _name)
 #include <linux/bpf_types.h>
-	[BPF_PROG_TYPE_STORAGE_FILTER] = &bpf_storage_filter_prog_ops,
+	[BPF_PROG_TYPE_STORAGE_DEV] = &bpf_storage_dev_prog_ops,
 #undef BPF_PROG_TYPE
 #undef BPF_MAP_TYPE
 #undef BPF_LINK_TYPE
@@ -2749,6 +2737,7 @@ static bool is_net_admin_prog_type(enum bpf_prog_type prog_type)
 	case BPF_PROG_TYPE_SOCK_OPS:
 	case BPF_PROG_TYPE_EXT: /* extends any prog */
 	case BPF_PROG_TYPE_NETFILTER:
+	case BPF_PROG_TYPE_STORAGE_DEV:
 		return true;
 	case BPF_PROG_TYPE_CGROUP_SKB:
 		/* always unpriv */
@@ -4209,6 +4198,8 @@ attach_type_to_prog_type(enum bpf_attach_type attach_type)
 	case BPF_CGROUP_INET_INGRESS:
 	case BPF_CGROUP_INET_EGRESS:
 		return BPF_PROG_TYPE_CGROUP_SKB;
+	case BPF_ATTACH_TYPE_STORAGE_DEV:
+		return BPF_PROG_TYPE_STORAGE_DEV;
 	case BPF_CGROUP_INET_SOCK_CREATE:
 	case BPF_CGROUP_INET_SOCK_RELEASE:
 	case BPF_CGROUP_INET4_POST_BIND:
@@ -4304,6 +4295,10 @@ static int bpf_prog_attach_check_attach_type(const struct bpf_prog *prog,
 		return 0;
 	case BPF_PROG_TYPE_NETFILTER:
 		if (attach_type != BPF_NETFILTER)
+			return -EINVAL;
+		return 0;
+	case BPF_PROG_TYPE_STORAGE_DEV:
+		if (attach_type != BPF_ATTACH_TYPE_STORAGE_DEV)
 			return -EINVAL;
 		return 0;
 	case BPF_PROG_TYPE_PERF_EVENT:
