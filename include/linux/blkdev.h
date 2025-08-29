@@ -146,7 +146,6 @@ struct gendisk {
 	 * block core will take care of allocating them automatically.
 	 */
 	int major;
-	struct bpf_prog __rcu *bpf_storage_filter;
 	int first_minor;
 	int minors;
 
@@ -638,6 +637,8 @@ struct request_queue {
 	 * Serializes all debugfs metadata operations using the above dentries.
 	 */
 	struct mutex		debugfs_mutex;
+
+	struct bpf_prog __rcu	*bpf_storage_dev_program;
 };
 
 /* Keep blk_queue_flag_name[] in sync with the definitions below */

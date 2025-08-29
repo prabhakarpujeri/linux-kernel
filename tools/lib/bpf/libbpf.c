@@ -136,6 +136,7 @@ static const char * const attach_type_name[] = {
 	[BPF_NETKIT_PEER]		= "netkit_peer",
 	[BPF_TRACE_KPROBE_SESSION]	= "trace_kprobe_session",
 	[BPF_TRACE_UPROBE_SESSION]	= "trace_uprobe_session",
+	[BPF_ATTACH_TYPE_STORAGE_DEV]	= "storage_dev",
 };
 
 static const char * const link_type_name[] = {
@@ -228,6 +229,7 @@ static const char * const prog_type_name[] = {
 	[BPF_PROG_TYPE_SYSCALL]			= "syscall",
 	[BPF_PROG_TYPE_STORAGE_FILTER]		= "storage_filter",
 	[BPF_PROG_TYPE_NETFILTER]		= "netfilter",
+	[BPF_PROG_TYPE_STORAGE_DEV]		= "storage_dev",
 };
 
 static int __base_pr(enum libbpf_print_level level, const char *format,
@@ -9614,6 +9616,7 @@ static const struct bpf_sec_def section_defs[] = {
 	SEC_DEF("struct_ops.s+",	STRUCT_OPS, 0, SEC_SLEEPABLE),
 	SEC_DEF("sk_lookup",		SK_LOOKUP, BPF_SK_LOOKUP, SEC_ATTACHABLE),
 	SEC_DEF("netfilter",		NETFILTER, BPF_NETFILTER, SEC_NONE),
+	SEC_DEF("storage_dev",		STORAGE_DEV, BPF_ATTACH_TYPE_STORAGE_DEV, SEC_ATTACHABLE),
 };
 
 int libbpf_register_prog_handler(const char *sec,

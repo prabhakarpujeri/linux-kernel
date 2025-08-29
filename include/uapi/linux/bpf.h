@@ -1071,6 +1071,7 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_SK_LOOKUP,
 	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
 	BPF_PROG_TYPE_STORAGE_FILTER,
+	BPF_PROG_TYPE_STORAGE_DEV,
 	BPF_PROG_TYPE_NETFILTER,
 	__MAX_BPF_PROG_TYPE
 };
@@ -1079,6 +1080,7 @@ enum bpf_attach_type {
 	BPF_CGROUP_INET_INGRESS,
 	BPF_CGROUP_INET_EGRESS,
 	BPF_ATTACH_TYPE_STORAGE_FILTER,
+	BPF_ATTACH_TYPE_STORAGE_DEV,
 	BPF_CGROUP_INET_SOCK_CREATE,
 	BPF_CGROUP_SOCK_OPS,
 	BPF_SK_SKB_STREAM_PARSER,
@@ -7498,6 +7500,13 @@ struct bpf_storage_ctx {
 	 * The block I/O request.
 	 */
 	__bpf_md_ptr(struct bio *, bio);
+};
+
+struct bpf_storage_dev_ctx {
+	/*
+	 * The block I/O request.
+	 */
+	__bpf_md_ptr(struct request *, req);
 };
 
 /*
