@@ -27,9 +27,14 @@
 #include <linux/io-64-nonatomic-lo-hi.h>
 #include <linux/io-64-nonatomic-hi-lo.h>
 #include <linux/sed-opal.h>
+#include <linux/sched/task.h>
 
 #include "trace.h"
 #include "nvme.h"
+
+static bool async_probe = true;
+module_param(async_probe, bool, 0644);
+MODULE_PARM_DESC(async_probe, "probe NVMe devices asynchronously");
 
 #define SQ_SIZE(q)	((q)->q_depth << (q)->sqes)
 #define CQ_SIZE(q)	((q)->q_depth * sizeof(struct nvme_completion))
@@ -192,6 +197,8 @@ struct nvme_dev {
 	unsigned int nr_allocated_queues;
 	unsigned int nr_write_queues;
 	unsigned int nr_poll_queues;
+	struct nvme_probe_work *probe_work;
+	bool removing;
 	struct nvme_descriptor_pools descriptor_pools[];
 };
 
@@ -3416,6 +3423,7 @@ static int nvme_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct nvme_dev *dev;
 	int result = -ENOMEM;
+	struct nvme_probe_work *work;
 
 	dev = nvme_pci_alloc_dev(pdev, id);
 	if (IS_ERR(dev))
@@ -3434,6 +3442,21 @@ static int nvme_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_dev_unmap;
 
 	dev_info(dev->ctrl.device, "pci function %s\n", dev_name(&pdev->dev));
+
+	pci_set_drvdata(pdev, dev);
+
+	if (async_probe) {
+		work = kzalloc(sizeof(*work), GFP_KERNEL);
+		if (!work) {
+			result = -ENOMEM;
+			goto out_release_iod_mempool;
+		}
+		INIT_WORK(&work->work, nvme_async_probe_work);
+		work->dev = dev;
+		dev->probe_work = work;
+		queue_work(nvme_wq, &work->work);
+		return 0;
+	}
 
 	result = nvme_pci_enable(dev);
 	if (result)
@@ -3492,8 +3515,6 @@ static int nvme_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto out_disable;
 	}
 
-	pci_set_drvdata(pdev, dev);
-
 	nvme_start_ctrl(&dev->ctrl);
 	nvme_put_ctrl(&dev->ctrl);
 	flush_work(&dev->ctrl.scan_work);
@@ -3539,11 +3560,28 @@ static void nvme_reset_done(struct pci_dev *pdev)
 		flush_work(&dev->ctrl.reset_work);
 }
 
+static void nvme_shutdown_async(void *data, async_cookie_t cookie)
+{
+	struct pci_dev *pdev = data;
+	struct nvme_dev *dev = pci_get_drvdata(pdev);
+
+	if (dev)
+		nvme_disable_prepare_reset(dev, true);
+}
+
 static void nvme_shutdown(struct pci_dev *pdev)
 {
 	struct nvme_dev *dev = pci_get_drvdata(pdev);
 
-	nvme_disable_prepare_reset(dev, true);
+	if (!dev)
+		return;
+
+	if (async_probe) {
+		async_schedule(nvme_shutdown_async, pdev);
+		return;
+	}
+
+	nvme_disable_prepare_reset(pci_get_drvdata(pdev), true);
 }
 
 /*
@@ -3554,6 +3592,10 @@ static void nvme_shutdown(struct pci_dev *pdev)
 static void nvme_remove(struct pci_dev *pdev)
 {
 	struct nvme_dev *dev = pci_get_drvdata(pdev);
+
+	dev->removing = true;
+	if (dev->probe_work)
+		cancel_work_sync(&dev->probe_work->work);
 
 	nvme_change_ctrl_state(&dev->ctrl, NVME_CTRL_DELETING);
 	pci_set_drvdata(pdev, NULL);
@@ -3752,6 +3794,107 @@ static void nvme_error_resume(struct pci_dev *pdev)
 	struct nvme_dev *dev = pci_get_drvdata(pdev);
 
 	flush_work(&dev->ctrl.reset_work);
+}
+
+struct nvme_probe_work {
+	struct work_struct work;
+	struct nvme_dev *dev;
+	bool last_path;
+};
+
+static void nvme_async_probe_work(struct work_struct *work)
+{
+	struct nvme_probe_work *probe_work =
+		container_of(work, struct nvme_probe_work, work);
+	struct nvme_dev *dev = probe_work->dev;
+	int result;
+
+	if (dev->removing)
+		goto out_free_work;
+
+	result = nvme_pci_enable(dev);
+	if (result)
+		goto out_free_work;
+
+	if (dev->removing)
+		goto out_disable;
+
+	result = nvme_alloc_admin_tag_set(&dev->ctrl, &dev->admin_tagset,
+			&nvme_mq_admin_ops, sizeof(struct nvme_iod));
+	if (result)
+		goto out_disable;
+
+	/*
+	 * Mark the controller as connecting before sending admin commands to
+	 * allow the timeout handler to do the right thing.
+	 */
+	if (!nvme_change_ctrl_state(&dev->ctrl, NVME_CTRL_CONNECTING)) {
+		dev_warn(dev->ctrl.device,
+			"failed to mark controller CONNECTING\n");
+		result = -EBUSY;
+		goto out_free_tagset;
+	}
+
+	result = nvme_init_ctrl_finish(&dev->ctrl, false);
+	if (result)
+		goto out_free_tagset;
+
+	if (nvme_ctrl_meta_sgl_supported(&dev->ctrl))
+		dev->ctrl.max_integrity_segments = NVME_MAX_META_SEGS;
+	else
+		dev->ctrl.max_integrity_segments = 1;
+
+	nvme_dbbuf_dma_alloc(dev);
+
+	result = nvme_setup_host_mem(dev);
+	if (result < 0)
+		goto out_free_tagset;
+
+	nvme_update_attrs(dev);
+
+	result = nvme_setup_io_queues(dev);
+	if (result)
+		goto out_free_tagset;
+
+	if (dev->online_queues > 1) {
+		nvme_alloc_io_tag_set(&dev->ctrl, &dev->tagset, &nvme_mq_ops,
+				nvme_pci_nr_maps(dev), sizeof(struct nvme_iod));
+		nvme_dbbuf_set(dev);
+	}
+
+	if (!dev->ctrl.tagset)
+		dev_warn(dev->ctrl.device, "IO queues not created\n");
+
+	if (!nvme_change_ctrl_state(&dev->ctrl, NVME_CTRL_LIVE)) {
+		dev_warn(dev->ctrl.device,
+			"failed to mark controller live state\n");
+		result = -ENODEV;
+		goto out_free_tagset;
+	}
+
+	nvme_start_ctrl(&dev->ctrl);
+	nvme_put_ctrl(&dev->ctrl);
+	flush_work(&dev->ctrl.scan_work);
+	dev->probe_work = NULL;
+	kfree(probe_work);
+	return;
+
+out_free_tagset:
+	nvme_change_ctrl_state(&dev->ctrl, NVME_CTRL_DELETING);
+	nvme_dev_remove_admin(dev);
+out_disable:
+	nvme_dev_disable(dev, true);
+	nvme_free_host_mem(dev);
+	nvme_dbbuf_dma_free(dev);
+	nvme_free_queues(dev, 0);
+	mempool_destroy(dev->dmavec_mempool);
+	mempool_destroy(dev->iod_meta_mempool);
+	nvme_dev_unmap(dev);
+	pci_set_drvdata(to_pci_dev(dev->dev), NULL);
+	nvme_uninit_ctrl(&dev->ctrl);
+out_free_work:
+	dev->probe_work = NULL;
+	kfree(probe_work);
 }
 
 static const struct pci_error_handlers nvme_err_handler = {
