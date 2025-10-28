@@ -17,6 +17,7 @@
 #include <linux/mdio.h>
 
 #include "igb.h"
+#include "../intel_ethtool.h"
 
 struct igb_stats {
 	char stat_string[ETH_GSTRING_LEN];
@@ -372,24 +373,9 @@ static u32 igb_get_link(struct net_device *netdev)
 	return igb_has_link(adapter);
 }
 
-static void igb_get_pauseparam(struct net_device *netdev,
-			       struct ethtool_pauseparam *pause)
-{
-	struct igb_adapter *adapter = netdev_priv(netdev);
-	struct e1000_hw *hw = &adapter->hw;
-
-	pause->autoneg =
-		(adapter->fc_autoneg ? AUTONEG_ENABLE : AUTONEG_DISABLE);
-
-	if (hw->fc.current_mode == e1000_fc_rx_pause)
-		pause->rx_pause = 1;
-	else if (hw->fc.current_mode == e1000_fc_tx_pause)
-		pause->tx_pause = 1;
-	else if (hw->fc.current_mode == e1000_fc_full) {
-		pause->rx_pause = 1;
-		pause->tx_pause = 1;
-	}
-}
+DEFINE_INTEL_GET_PAUSEPARAM(igb_get_pauseparam, struct igb_adapter,
+			    struct e1000_hw, e1000_fc_rx_pause,
+			    e1000_fc_tx_pause, e1000_fc_full);
 
 static int igb_set_pauseparam(struct net_device *netdev,
 			      struct ethtool_pauseparam *pause)
@@ -443,17 +429,8 @@ static int igb_set_pauseparam(struct net_device *netdev,
 	return retval;
 }
 
-static u32 igb_get_msglevel(struct net_device *netdev)
-{
-	struct igb_adapter *adapter = netdev_priv(netdev);
-	return adapter->msg_enable;
-}
-
-static void igb_set_msglevel(struct net_device *netdev, u32 data)
-{
-	struct igb_adapter *adapter = netdev_priv(netdev);
-	adapter->msg_enable = data;
-}
+DEFINE_INTEL_GET_MSGLEVEL(igb_get_msglevel, struct igb_adapter);
+DEFINE_INTEL_SET_MSGLEVEL(igb_set_msglevel, struct igb_adapter);
 
 static int igb_get_regs_len(struct net_device *netdev)
 {
@@ -866,18 +843,8 @@ static void igb_get_drvinfo(struct net_device *netdev,
 	drvinfo->n_priv_flags = IGB_PRIV_FLAGS_STR_LEN;
 }
 
-static void igb_get_ringparam(struct net_device *netdev,
-			      struct ethtool_ringparam *ring,
-			      struct kernel_ethtool_ringparam *kernel_ring,
-			      struct netlink_ext_ack *extack)
-{
-	struct igb_adapter *adapter = netdev_priv(netdev);
-
-	ring->rx_max_pending = IGB_MAX_RXD;
-	ring->tx_max_pending = IGB_MAX_TXD;
-	ring->rx_pending = adapter->rx_ring_count;
-	ring->tx_pending = adapter->tx_ring_count;
-}
+DEFINE_INTEL_GET_RINGPARAM(igb_get_ringparam, struct igb_adapter,
+			   IGB_MAX_RXD, IGB_MAX_TXD);
 
 static int igb_set_ringparam(struct net_device *netdev,
 			     struct ethtool_ringparam *ring,
@@ -2111,12 +2078,6 @@ static void igb_get_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 			 WAKE_BCAST | WAKE_MAGIC |
 			 WAKE_PHY;
 
-	/* apply any specific unsupported masks here */
-	switch (adapter->hw.device_id) {
-	default:
-		break;
-	}
-
 	if (adapter->wol & E1000_WUFC_EX)
 		wol->wolopts |= WAKE_UCAST;
 	if (adapter->wol & E1000_WUFC_MC)
@@ -2139,7 +2100,6 @@ static int igb_set_wol(struct net_device *netdev, struct ethtool_wolinfo *wol)
 	if (!(adapter->flags & IGB_FLAG_WOL_SUPPORTED))
 		return wol->wolopts ? -EOPNOTSUPP : 0;
 
-	/* these settings will always override what we currently have */
 	adapter->wol = 0;
 
 	if (wol->wolopts & WAKE_UCAST)
