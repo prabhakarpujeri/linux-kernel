@@ -270,7 +270,7 @@ static bool ice_clean_tx_irq(struct ice_tx_ring *tx_ring, int napi_budget)
 		dma_unmap_len_set(tx_buf, len, 0);
 
 		/* unmap remaining buffers */
-		while (tx_desc != eop_desc) {
+		while (unlikely(tx_desc != eop_desc)) {
 			ice_trace(clean_tx_irq_unmap, tx_ring, tx_desc, tx_buf);
 			tx_buf++;
 			tx_desc++;
